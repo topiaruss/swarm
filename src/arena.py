@@ -82,6 +82,21 @@ class Arena:
         """Get list of all active entities."""
         return [e for e in self.entities if e.active]
 
+    def get_entity_by_id(self, entity_id: str) -> Optional[Entity]:
+        """
+        Get entity by ID.
+
+        Args:
+            entity_id: Entity ID to search for
+
+        Returns:
+            Entity if found, None otherwise
+        """
+        for entity in self.entities:
+            if entity.id == entity_id:
+                return entity
+        return None
+
     def find_entities_near(
         self,
         position: np.ndarray,

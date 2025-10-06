@@ -17,6 +17,7 @@ import time
 
 class MessageType(Enum):
     """Types of messages in the mesh network."""
+    HEARTBEAT = "heartbeat"         # Connectivity heartbeat
     POSITION = "position"           # Position broadcast
     THREAT_ALERT = "threat_alert"   # Enemy detected
     STATUS = "status"               # Battery, health status

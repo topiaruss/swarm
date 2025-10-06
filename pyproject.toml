@@ -36,6 +36,8 @@ swarm-basic = "examples.basic_scenario:main"
 swarm-gps-denied = "examples.gps_denied_navigation:main"
 swarm-imu = "examples.imu_navigation:main"
 swarm-mesh = "examples.mesh_comms:main"
+swarm-network = "examples.network_partition:main"
+swarm-autonomous = "examples.autonomous_operation:main"
 
 [build-system]
 requires = ["hatchling"]
