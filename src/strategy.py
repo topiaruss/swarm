@@ -511,15 +511,82 @@ class AutonomousStrategy:
 
         return 0.0
 
+    def calculate_flight_time_to_station(self, station: ChargingStation) -> float:
+        """
+        Calculate flight time to charging station.
+
+        Args:
+            station: Charging station
+
+        Returns:
+            Flight time in seconds
+        """
+        distance = np.linalg.norm(self.drone.position - station.position)
+        cruise_speed = self.drone.max_speed * 0.5
+        return distance / cruise_speed if cruise_speed > 0 else 0
+
+    def estimate_slot_available_time(
+        self,
+        station: ChargingStation,
+        fleet_drones: Optional[List[Drone]] = None,
+        current_time: float = 0.0
+    ) -> float:
+        """
+        Estimate when a charging slot will become available.
+
+        Args:
+            station: Charging station
+            fleet_drones: All drones in fleet
+            current_time: Current simulation time
+
+        Returns:
+            Estimated time when slot will be available (seconds from now)
+        """
+        # If slot currently available, return immediately
+        if station.has_available_slot():
+            return current_time
+
+        # Estimate when current charging drones will finish
+        if not fleet_drones:
+            # Conservative estimate: assume 30 seconds
+            return current_time + 30.0
+
+        # Find drones currently charging
+        charging_drones = []
+        for drone in fleet_drones:
+            if hasattr(drone, 'charging_slot') and drone.charging_slot is not None:
+                if hasattr(drone, 'battery') and isinstance(drone.battery, Battery):
+                    charging_drones.append(drone)
+
+        if not charging_drones:
+            # No one charging but no slots? Conservative estimate
+            return current_time + 30.0
+
+        # Estimate time for each charging drone to finish
+        finish_times = []
+        for drone in charging_drones:
+            battery_remaining = drone.battery.full_level - drone.battery.level()
+            time_to_full = battery_remaining / station.charge_rate if station.charge_rate > 0 else 50.0
+            finish_time = current_time + time_to_full
+            finish_times.append(finish_time)
+
+        # Earliest finish time is when a slot opens
+        if finish_times:
+            return min(finish_times)
+
+        return current_time + 30.0
+
     def should_return_to_charge(
         self,
         station: ChargingStation,
-        fleet_drones: Optional[List[Drone]] = None
+        fleet_drones: Optional[List[Drone]] = None,
+        current_time: float = 0.0
     ) -> bool:
         """
         Determine if drone should return to charging station.
 
         Uses advanced heuristics:
+        - Time-based scheduling (return just in time for slot availability)
         - Predictive scheduling (charge proactively when slots free)
         - Load balancing (maintain staggered battery levels)
         - Emergency reserves (ensure at least one high-battery drone)
@@ -527,6 +594,7 @@ class AutonomousStrategy:
         Args:
             station: Charging station
             fleet_drones: All drones in fleet (for load balancing)
+            current_time: Current simulation time
 
         Returns:
             True if should return to charge
@@ -550,9 +618,27 @@ class AutonomousStrategy:
         if energy_margin < margin_threshold:
             return True
 
-        # Below optimal AND charging slot available
-        if battery.is_below_optimal() and station.has_available_slot():
-            return True
+        # TIME-BASED SCHEDULING: Only return when it's time to fly back
+        # Estimate when a slot will be available
+        slot_available_time = self.estimate_slot_available_time(station, fleet_drones, current_time)
+        flight_time = self.calculate_flight_time_to_station(station)
+
+        # Time to start flying back (with 5s buffer)
+        departure_time = slot_available_time - flight_time - 5.0
+
+        # If slot is currently available, check other conditions
+        if station.has_available_slot():
+            # Below optimal AND slot available right now
+            if battery.is_below_optimal():
+                return True
+        else:
+            # Station is busy
+            # Only stay on patrol if it's too early to leave AND we're not critical
+            if current_time < departure_time:
+                # Too early - stay on patrol even if battery is low
+                # (unless critical, which we already checked above)
+                return False
+            # If current_time >= departure_time, it's time to go (or already past time)
 
         # Advanced heuristics (if fleet info available)
         if fleet_drones:
@@ -586,9 +672,11 @@ class AutonomousStrategy:
                     # Predictive scheduling: charge now to maintain staggered levels
                     return True
 
-                # Priority queue fairness: if I'm lowest and below optimal, go charge
+                # Priority queue fairness: if I'm lowest and below optimal, check timing
                 if battery_pct < 0.80 and battery_pct <= min_battery:
-                    return True
+                    # Only return if it's time to depart (or slot is free)
+                    if station.has_available_slot() or current_time >= departure_time:
+                        return True
 
         return False
 
