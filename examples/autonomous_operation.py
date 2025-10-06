@@ -234,43 +234,44 @@ class AutonomousOperationSimulation:
                 strategy = self.strategies.get(entity.id)
                 if strategy:
                     # Detect enemies
-                    detections = self.detector.detect_entities(
+                    detections = self.detector.detect(
                         entity,
-                        self.arena.get_active_entities(),
-                        max_range=entity.detection_range
+                        self.arena.get_active_entities()
                     )
 
-                    for detection in detections:
-                        detected_entity = self.arena.get_entity_by_id(detection['entity_id'])
-                        if detected_entity and entity.is_foe(detected_entity):
-                            # Add to strategy's threat list
-                            strategy.add_threat(
-                                threat_id=detected_entity.id,
-                                position=detected_entity.position,
-                                timestamp=self.arena.time,
-                                detector_id=entity.id,
-                                confidence=detection['confidence'],
-                                threat_level=ThreatLevel.HIGH
-                            )
+                    # Filter to foes only
+                    foes = self.detector.filter_foes(detections)
 
-                            # Check if should alert
-                            if strategy.should_alert_threat(detected_entity.id):
-                                print(f"[{entity.id}] THREAT ALERT: {detected_entity.id} detected at {detected_entity.position[:2]}")
-                                strategy.mark_threat_alerted(detected_entity.id)
+                    for detection in foes:
+                        detected_entity = detection.entity
+                        # Add to strategy's threat list
+                        strategy.add_threat(
+                            threat_id=detected_entity.id,
+                            position=detected_entity.position,
+                            timestamp=self.arena.time,
+                            detector_id=entity.id,
+                            confidence=1.0,  # Full confidence for direct detection
+                            threat_level=ThreatLevel.HIGH
+                        )
 
-                                # Send threat alert via mesh (if connected)
-                                mesh_node = self.mesh.nodes.get(entity.id)
-                                if mesh_node:
-                                    mesh_node.send_message(
-                                        msg_type=MessageType.THREAT_ALERT,
-                                        data={
-                                            'threat_id': detected_entity.id,
-                                            'position': detected_entity.position.tolist(),
-                                            'detector_id': entity.id,
-                                            'threat_level': ThreatLevel.HIGH.value
-                                        },
-                                        timestamp=self.arena.time
-                                    )
+                        # Check if should alert
+                        if strategy.should_alert_threat(detected_entity.id):
+                            print(f"[{entity.id}] THREAT ALERT: {detected_entity.id} detected at {detected_entity.position[:2]}")
+                            strategy.mark_threat_alerted(detected_entity.id)
+
+                            # Send threat alert via mesh (if connected)
+                            mesh_node = self.mesh.nodes.get(entity.id)
+                            if mesh_node:
+                                mesh_node.send_message(
+                                    msg_type=MessageType.THREAT_ALERT,
+                                    data={
+                                        'threat_id': detected_entity.id,
+                                        'position': detected_entity.position.tolist(),
+                                        'detector_id': entity.id,
+                                        'threat_level': ThreatLevel.HIGH.value
+                                    },
+                                    timestamp=self.arena.time
+                                )
 
         # Process heartbeats
         for entity in self.arena.get_active_entities():
