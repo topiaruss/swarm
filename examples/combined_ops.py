@@ -285,8 +285,8 @@ class CombinedOpsSimulation:
             else:
                 drone.status = 'patrol'
 
-                # Check if should return to charge
-                if strategy.should_return_to_charge(self.station):
+                # Check if should return to charge (with fleet awareness)
+                if strategy.should_return_to_charge(self.station, patrol_drones):
                     self.returning_drones.add(drone.id)
                     print(f"[{self.arena.time:.1f}s] {drone.id} returning to charge (battery: {drone.battery.level()*100:.0f}%)")
 

@@ -511,12 +511,22 @@ class AutonomousStrategy:
 
         return 0.0
 
-    def should_return_to_charge(self, station: ChargingStation) -> bool:
+    def should_return_to_charge(
+        self,
+        station: ChargingStation,
+        fleet_drones: Optional[List[Drone]] = None
+    ) -> bool:
         """
         Determine if drone should return to charging station.
 
+        Uses advanced heuristics:
+        - Predictive scheduling (charge proactively when slots free)
+        - Load balancing (maintain staggered battery levels)
+        - Emergency reserves (ensure at least one high-battery drone)
+
         Args:
             station: Charging station
+            fleet_drones: All drones in fleet (for load balancing)
 
         Returns:
             True if should return to charge
@@ -544,12 +554,41 @@ class AutonomousStrategy:
         if battery.is_below_optimal() and station.has_available_slot():
             return True
 
-        # Below optimal AND we're lower than anyone in queue
-        if battery.is_below_optimal() and len(station.queue) > 0:
-            # Check if we should jump the queue (we're more critical)
-            # This would require access to other drones' battery levels
-            # For now, just return True if below optimal
-            pass
+        # Advanced heuristics (if fleet info available)
+        if fleet_drones:
+            # Get battery levels of other drones
+            other_batteries = [
+                d.battery.level()
+                for d in fleet_drones
+                if (hasattr(d, 'battery') and
+                    isinstance(d.battery, Battery) and
+                    d.id != self.drone.id)
+            ]
+
+            if other_batteries:
+                # Emergency reserve check: ensure at least one drone stays >80%
+                high_battery_drones = sum(1 for b in other_batteries if b >= 0.80)
+
+                # If I'm the only one with high battery, don't leave unless critical
+                if high_battery_drones == 0 and battery_pct >= 0.80:
+                    # I'm the emergency reserve, only charge if critical
+                    return False
+
+                # Load balancing: avoid everyone being low simultaneously
+                avg_battery = sum(other_batteries) / len(other_batteries)
+                min_battery = min(other_batteries)
+
+                # If others are healthy and slot is free, charge proactively
+                if (battery_pct < 0.90 and  # Below 90%
+                    station.has_available_slot() and
+                    avg_battery > 0.60 and  # Fleet average is healthy
+                    min_battery > 0.40):  # No one else is critical
+                    # Predictive scheduling: charge now to maintain staggered levels
+                    return True
+
+                # Priority queue fairness: if I'm lowest and below optimal, go charge
+                if battery_pct < 0.80 and battery_pct <= min_battery:
+                    return True
 
         return False
 
