@@ -239,6 +239,7 @@ class CombinedOpsSimulation:
 
             # Currently charging?
             if drone.id in self.charging_drones:
+                drone.status = 'charging'
                 slot = self.charging_drones[drone.id]
                 self.station.charge_drone(drone, self.dt)
 
@@ -260,6 +261,7 @@ class CombinedOpsSimulation:
 
             # Returning to charge?
             elif drone.id in self.returning_drones:
+                drone.status = 'returning'
                 distance_to_station = np.linalg.norm(drone.position - self.station.position)
 
                 if distance_to_station < 10.0:
@@ -281,6 +283,8 @@ class CombinedOpsSimulation:
 
             # Normal patrol
             else:
+                drone.status = 'patrol'
+
                 # Check if should return to charge
                 if strategy.should_return_to_charge(self.station):
                     self.returning_drones.add(drone.id)

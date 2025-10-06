@@ -6,6 +6,7 @@ Real-time plotting of arena, entities, and detection ranges.
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as path_effects
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d import Axes3D
 from typing import List, Optional
@@ -180,6 +181,10 @@ class ArenaVisualizer:
                 self._update_trail(entity)
                 self._draw_trail(entity)
 
+            # Draw status indicator (for drones)
+            if isinstance(entity, Drone):
+                self._draw_drone_status(entity)
+
         # Draw mesh network connections
         if self.mesh_network:
             self._draw_mesh_connections()
@@ -273,6 +278,112 @@ class ArenaVisualizer:
                 alpha=0.3,
                 linewidth=1
             )
+
+    def _draw_drone_status(self, drone: Drone):
+        """Draw status indicator above drone (battery bar, ID, status)."""
+        pos = drone.position
+
+        # Get battery level (default to 100% if no battery)
+        if hasattr(drone, 'battery'):
+            battery_level = drone.battery.level()
+        else:
+            battery_level = drone.battery_level / drone.battery_capacity
+
+        # Battery bar color based on level
+        if battery_level < 0.15:
+            bar_color = 'red'
+        elif battery_level < 0.80:
+            bar_color = 'orange'
+        else:
+            bar_color = 'green'
+
+        # Battery bar height (proportional, max 30m)
+        max_bar_height = 30.0
+        bar_height = max_bar_height * battery_level
+
+        # Draw battery bar (thick vertical line)
+        bar_bottom = pos[2] + 5  # Start 5m above drone
+        bar_top = bar_bottom + bar_height
+
+        self.ax.plot(
+            [pos[0], pos[0]],
+            [pos[1], pos[1]],
+            [bar_bottom, bar_top],
+            color=bar_color,
+            linewidth=6,
+            alpha=0.9,
+            solid_capstyle='round'
+        )
+
+        # Draw tick marks at 25%, 50%, 75%
+        tick_levels = [0.25, 0.50, 0.75]
+        tick_width = 3.0  # meters
+
+        for level in tick_levels:
+            tick_z = bar_bottom + max_bar_height * level
+            if tick_z <= bar_top:  # Only draw if within current battery level
+                self.ax.plot(
+                    [pos[0] - tick_width/2, pos[0] + tick_width/2],
+                    [pos[1], pos[1]],
+                    [tick_z, tick_z],
+                    color='white',
+                    linewidth=1.5,
+                    alpha=0.7
+                )
+
+        # Drone ID on the dot (white text with black outline)
+        # Extract number from ID (e.g., "PATROL-1" -> "1")
+        drone_num = drone.id.split('-')[-1] if '-' in drone.id else drone.id
+
+        self.ax.text(
+            pos[0], pos[1], pos[2],
+            drone_num,
+            color='white',
+            fontsize=10,
+            fontweight='bold',
+            ha='center',
+            va='center',
+            path_effects=[
+                path_effects.withStroke(linewidth=2, foreground='black')
+            ]
+        )
+
+        # Determine status character
+        status_char = 'P'  # Default: Patrolling
+
+        if hasattr(drone, 'charging_slot') and drone.charging_slot is not None:
+            status_char = 'C'  # Charging
+        elif hasattr(drone, 'status'):
+            # Allow explicit status override
+            status_map = {
+                'charging': 'C',
+                'returning': 'R',
+                'patrol': 'P',
+                'hovering': 'H'
+            }
+            status_char = status_map.get(drone.status, 'P')
+        elif np.linalg.norm(drone.velocity) < 0.5:
+            status_char = 'H'  # Hovering (very low velocity)
+
+        # Draw status letter at top of bar with background box
+        status_z = bar_bottom + max_bar_height + 3  # 3m above full bar
+
+        self.ax.text(
+            pos[0], pos[1], status_z,
+            status_char,
+            color='white',
+            fontsize=11,
+            fontweight='bold',
+            ha='center',
+            va='center',
+            bbox=dict(
+                boxstyle='round,pad=0.3',
+                facecolor='black',
+                alpha=0.7,
+                edgecolor='white',
+                linewidth=1
+            )
+        )
 
     def _add_legend(self, entities: List[Entity]):
         """Add legend to plot."""
