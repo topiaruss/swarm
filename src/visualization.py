@@ -115,8 +115,26 @@ class ArenaVisualizer:
         Args:
             frame: Animation frame number (for FuncAnimation)
         """
+        # Manually remove all artists before clearing (helps with 3D plot artifacts)
+        for line in self.ax.lines[:]:
+            line.remove()
+
+        # Also remove collections (scatter plots, etc)
+        for collection in self.ax.collections[:]:
+            collection.remove()
+
+        # Remove patches and artists
+        for patch in self.ax.patches[:]:
+            patch.remove()
+
+        for artist in self.ax.artists[:]:
+            artist.remove()
+
         self.ax.clear()
         self._setup_plot()
+
+        # Clear mesh lines list after ax.clear()
+        self.mesh_lines.clear()
 
         active_entities = self.arena.get_active_entities()
 
@@ -210,14 +228,6 @@ class ArenaVisualizer:
 
     def _draw_mesh_connections(self):
         """Draw mesh network connections between nodes."""
-        # Remove old mesh connection lines
-        for line in self.mesh_lines:
-            try:
-                line.remove()
-            except:
-                pass
-        self.mesh_lines.clear()
-
         if not self.mesh_network:
             return
 
@@ -233,10 +243,10 @@ class ArenaVisualizer:
                     [pos1[0], pos2[0]],
                     [pos1[1], pos2[1]],
                     [pos1[2], pos2[2]],
-                    color='lime',      # Bright green instead of cyan
-                    alpha=0.6,         # More opaque
-                    linewidth=2,       # Thicker
-                    linestyle='-'      # Solid line instead of dotted
+                    color='lime',
+                    alpha=0.6,
+                    linewidth=2,
+                    linestyle='-'
                 )[0]  # plot() returns a list of Line2D objects
                 self.mesh_lines.append(line)
 

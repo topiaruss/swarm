@@ -192,6 +192,7 @@ Deploy:
 - **PlatformIO** - ESP32 development (free)
 - **Arduino IDE** - Alternative for ESP32 (free)
 - **Betaflight Configurator** - Flight controller tuning (free)
+
 - **QGroundControl** - If using Pixhawk/PX4 (free)
 - **Your Python simulation** - Already done! ✅
 

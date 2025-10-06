@@ -314,11 +314,12 @@ class CombinedOpsSimulation:
                 # Discharge battery during patrol
                 drone.battery.discharge(self.dt, rate_multiplier=1.0)
 
-                # Update mesh position
-                self.mesh.update_node_position(drone.id, drone.position)
-
         # Update physics
         self.physics.update(self.arena.get_active_entities(), self.dt)
+
+        # Update mesh positions for all drones (after physics update)
+        for drone in patrol_drones:
+            self.mesh.update_node_position(drone.id, drone.position)
 
         # Detect threats
         for entity in self.arena.get_active_entities():
@@ -485,6 +486,9 @@ class CombinedOpsSimulation:
 
         def update_with_status():
             self.update()
+
+            # Update mesh visualization
+            viz.mesh_network = self.mesh
 
             # Print status every 10 seconds
             if int(self.arena.time) % 10 == 0 and self.arena.time > 0 and abs(self.arena.time - int(self.arena.time)) < self.dt:
