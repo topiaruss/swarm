@@ -20,6 +20,8 @@ class MessageType(Enum):
     HEARTBEAT = "heartbeat"         # Connectivity heartbeat
     POSITION = "position"           # Position broadcast
     THREAT_ALERT = "threat_alert"   # Enemy detected
+    STATE_SYNC_REQUEST = "state_sync_request"  # Request state sync on rejoin
+    STATE_SYNC_RESPONSE = "state_sync_response"  # Respond with state data
     STATUS = "status"               # Battery, health status
     COMMAND = "command"             # Coordination commands
     ACK = "ack"                     # Acknowledgment

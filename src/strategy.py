@@ -124,9 +124,75 @@ class AutonomousStrategy:
         self.autonomous_mode = False
         self.autonomy_started_at: Optional[float] = None
 
+        # State sync tracking
+        self.peers_to_sync: Set[str] = set()  # Peers we need to sync with
+
     def update_peer_position(self, peer_id: str, position: np.ndarray, timestamp: float):
         """Update last known position of a peer."""
         self.last_known_positions[peer_id] = (position.copy(), timestamp)
+
+    def request_state_sync(self, peer_id: str, current_time: float) -> Dict:
+        """
+        Create state sync request for a newly reconnected peer.
+
+        Args:
+            peer_id: ID of peer to sync with
+            current_time: Current simulation time
+
+        Returns:
+            Dictionary containing state sync request data
+        """
+        return {
+            'requester_id': self.drone.id,
+            'timestamp': current_time,
+            'threat_count': len(self.known_threats),
+            'threats': [
+                {
+                    'threat_id': threat.threat_id,
+                    'position': threat.position.tolist(),
+                    'timestamp': threat.timestamp,
+                    'detector_id': threat.detector_id,
+                    'confidence': threat.confidence,
+                    'threat_level': threat.threat_level.value,
+                    'last_updated': threat.last_updated
+                }
+                for threat in self.known_threats.values()
+            ]
+        }
+
+    def merge_threat_from_sync(
+        self,
+        threat_data: Dict,
+        current_time: float
+    ):
+        """
+        Merge a threat from state sync response.
+
+        Args:
+            threat_data: Threat data dictionary
+            current_time: Current simulation time
+        """
+        threat_id = threat_data['threat_id']
+
+        if threat_id in self.known_threats:
+            # Update existing threat if this is more recent
+            existing = self.known_threats[threat_id]
+            if threat_data['last_updated'] > existing.last_updated:
+                existing.position = np.array(threat_data['position'])
+                existing.last_updated = threat_data['last_updated']
+                existing.confidence = max(existing.confidence, threat_data['confidence'])
+                print(f"[{self.drone.id}] Updated threat {threat_id} from state sync")
+        else:
+            # New threat we didn't know about
+            self.add_threat(
+                threat_id=threat_id,
+                position=np.array(threat_data['position']),
+                timestamp=threat_data['timestamp'],
+                detector_id=threat_data['detector_id'],
+                confidence=threat_data['confidence'],
+                threat_level=ThreatLevel(threat_data['threat_level'])
+            )
+            print(f"[{self.drone.id}] Learned about threat {threat_id} from state sync")
 
     def add_threat(
         self,
@@ -351,6 +417,27 @@ class AutonomousStrategy:
         # Otherwise, let closer drones handle it
         return False
 
+    def on_peer_reconnected(self, peer_id: str):
+        """
+        Called when a peer reconnects after partition.
+
+        Args:
+            peer_id: ID of reconnected peer
+        """
+        # Add to sync list if not already there
+        if peer_id not in self.peers_to_sync:
+            self.peers_to_sync.add(peer_id)
+            print(f"[{self.drone.id}] Will sync state with {peer_id}")
+
+    def get_peers_needing_sync(self) -> Set[str]:
+        """Get set of peers that need state sync."""
+        return self.peers_to_sync.copy()
+
+    def mark_peer_synced(self, peer_id: str):
+        """Mark peer as synced."""
+        if peer_id in self.peers_to_sync:
+            self.peers_to_sync.remove(peer_id)
+
     def update(self, current_time: float):
         """
         Update autonomous strategy state.
@@ -365,6 +452,16 @@ class AutonomousStrategy:
         else:
             if self.autonomous_mode:
                 self.exit_autonomous_mode()
+
+        # Detect reconnections and trigger state sync
+        for peer_id in self.network_state.expected_peers:
+            peer_state = self.network_state.peers.get(peer_id)
+            if peer_state:
+                # Check if this peer just reconnected (rejoin_count changed)
+                # We track this in the network_state, check if connected but wasn't before
+                if peer_state.connected and peer_id not in self.last_known_positions:
+                    # First time seeing this peer since we started, or it reconnected
+                    self.on_peer_reconnected(peer_id)
 
         # Update last known positions from network state
         for peer_id in self.network_state.expected_peers:

@@ -387,6 +387,25 @@ class AutonomousOperationSimulation:
 
                             print(f"[{entity.id}] Received threat alert for {threat_id} from {msg.sender_id}")
 
+                    elif msg.msg_type == MessageType.STATE_SYNC_REQUEST:
+                        # Received sync request - respond with our threats
+                        requester_id = msg.sender_id
+                        response_data = strategy.request_state_sync(requester_id, self.arena.time)
+                        mesh_node.send_message(
+                            msg_type=MessageType.STATE_SYNC_RESPONSE,
+                            data=response_data,
+                            timestamp=self.arena.time
+                        )
+
+                        # Also merge threats from the request
+                        for threat_data in msg.data.get('threats', []):
+                            strategy.merge_threat_from_sync(threat_data, self.arena.time)
+
+                    elif msg.msg_type == MessageType.STATE_SYNC_RESPONSE:
+                        # Merge threats from response
+                        for threat_data in msg.data.get('threats', []):
+                            strategy.merge_threat_from_sync(threat_data, self.arena.time)
+
                 mesh_node.inbox.clear()
 
                 # Detect partitions
