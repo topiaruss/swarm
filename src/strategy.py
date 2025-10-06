@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Set, Optional, Tuple
 from enum import Enum
 
-from src.entities import Drone, Team
+from src.entities import Drone, Team, ChargingStation, Battery
 from src.network import NetworkState, NetworkMode
 
 
@@ -482,6 +482,112 @@ class AutonomousStrategy:
         threats = len(self.get_active_threats(0))  # Pass dummy time
 
         return f"{mode} | Sector: {sector} | Threats: {threats}"
+
+    def calculate_return_energy(self, station: ChargingStation) -> float:
+        """
+        Calculate energy required to return to charging station.
+
+        Args:
+            station: Charging station to return to
+
+        Returns:
+            Energy required in mAh
+        """
+        distance = np.linalg.norm(self.drone.position - station.position)
+
+        # Estimate flight time at cruise speed (half max speed)
+        cruise_speed = self.drone.max_speed * 0.5
+        flight_time = distance / cruise_speed if cruise_speed > 0 else 0
+
+        # Energy consumption at patrol rate
+        if hasattr(self.drone, 'battery') and isinstance(self.drone.battery, Battery):
+            energy_required = self.drone.battery.discharge_rate_base * flight_time
+            return energy_required
+
+        return 0.0
+
+    def should_return_to_charge(self, station: ChargingStation) -> bool:
+        """
+        Determine if drone should return to charging station.
+
+        Args:
+            station: Charging station
+
+        Returns:
+            True if should return to charge
+        """
+        if not hasattr(self.drone, 'battery') or not isinstance(self.drone.battery, Battery):
+            return False
+
+        battery = self.drone.battery
+        battery_pct = battery.level()
+
+        # Critical: MUST return immediately
+        if battery.is_critical():
+            return True
+
+        # Calculate return energy cost
+        energy_to_return = self.calculate_return_energy(station)
+        energy_margin = battery.current_charge - energy_to_return
+
+        # Not enough to return safely + 10% margin
+        margin_threshold = 0.1 * battery.capacity
+        if energy_margin < margin_threshold:
+            return True
+
+        # Below optimal AND charging slot available
+        if battery.is_below_optimal() and station.has_available_slot():
+            return True
+
+        # Below optimal AND we're lower than anyone in queue
+        if battery.is_below_optimal() and len(station.queue) > 0:
+            # Check if we should jump the queue (we're more critical)
+            # This would require access to other drones' battery levels
+            # For now, just return True if below optimal
+            pass
+
+        return False
+
+    def should_leave_charger(
+        self,
+        station: ChargingStation,
+        other_drones: Optional[List[Drone]] = None
+    ) -> bool:
+        """
+        Determine if drone should leave charging station.
+
+        Args:
+            station: Charging station
+            other_drones: List of other drones (to check for critical batteries)
+
+        Returns:
+            True if should leave charger
+        """
+        if not hasattr(self.drone, 'battery') or not isinstance(self.drone.battery, Battery):
+            return False
+
+        battery = self.drone.battery
+        battery_pct = battery.level()
+
+        # Fully charged
+        if battery.is_full():
+            return True
+
+        # Someone waiting with critical battery
+        if other_drones:
+            for other in other_drones:
+                if (hasattr(other, 'battery') and
+                    isinstance(other.battery, Battery) and
+                    other.battery.is_critical()):
+                    # If I'm at optimal level, let critical drone charge
+                    if battery_pct >= battery.optimal_level:
+                        return True
+
+        # Good enough (80%) and someone is waiting
+        if battery_pct >= battery.optimal_level and len(station.queue) > 0:
+            return True
+
+        return False
 
 
 def create_perimeter_sectors(
