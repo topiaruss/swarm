@@ -1,0 +1,51 @@
+[project]
+name = "swarm"
+version = "0.1.0"
+description = "Defensive drone swarm simulation for personal protection and alerting"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Russ", email = "russ@example.com" }
+]
+keywords = ["drone", "swarm", "simulation", "defense", "mesh-network", "gps-denied"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Networking",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "numpy>=1.24.0",
+    "matplotlib>=3.7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/swarm"
+Documentation = "https://github.com/yourusername/swarm/blob/main/README.md"
+Repository = "https://github.com/yourusername/swarm"
+Issues = "https://github.com/yourusername/swarm/issues"
+
+[project.scripts]
+swarm-basic = "examples.basic_scenario:main"
+swarm-gps-denied = "examples.gps_denied_navigation:main"
+swarm-imu = "examples.imu_navigation:main"
+swarm-mesh = "examples.mesh_comms:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]

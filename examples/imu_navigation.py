@@ -107,7 +107,7 @@ class IMUNavigationSimulation:
         )
 
         # EWMA filter for transponder corrections
-        patrol.ewma_alpha = 0.2  # Low alpha: trust smooth IMU more than noisy transponders
+        patrol.ewma_alpha = 0.15  # Low alpha: trust smooth IMU more than noisy transponders
         patrol.filtered_position = patrol.position.copy()
         patrol.position_uncertainty = 0.0
         self.arena.add_entity(patrol)
@@ -198,7 +198,7 @@ class IMUNavigationSimulation:
                             transponder_pos, uncertainty = self.transponder_nav.calculate_position(signals)
 
                             # Apply EWMA filter to transponder correction
-                            # Low alpha (0.2) = trust smooth IMU more than noisy transponders
+                            # Low alpha (0.15) = trust smooth IMU more than noisy transponders
                             current_imu_pos = entity.imu_nav.get_position()
                             blended_pos = (
                                 entity.ewma_alpha * transponder_pos +
@@ -263,7 +263,7 @@ class IMUNavigationSimulation:
         print("  - IMU update rate: 100 Hz (high frequency)")
         print("  - Transponder check: 10 Hz (when needed)")
         print("  - Correction threshold: 2.0m drift")
-        print("  - EWMA alpha: 0.2 (trust IMU 80%, transponders 20%)")
+        print("  - EWMA alpha: 0.15 (trust IMU 85%, transponders 15%)")
         print("  - IMU sensor: Low-cost consumer grade (MPU6050)")
         print()
         print("Watch for:")
