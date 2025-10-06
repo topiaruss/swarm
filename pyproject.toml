@@ -38,6 +38,7 @@ swarm-imu = "examples.imu_navigation:main"
 swarm-mesh = "examples.mesh_comms:main"
 swarm-network = "examples.network_partition:main"
 swarm-autonomous = "examples.autonomous_operation:main"
+swarm-charging = "examples.charging_management:main"
 
 [build-system]
 requires = ["hatchling"]
