@@ -22,6 +22,8 @@ class MessageType(Enum):
     THREAT_ALERT = "threat_alert"   # Enemy detected
     STATE_SYNC_REQUEST = "state_sync_request"  # Request state sync on rejoin
     STATE_SYNC_RESPONSE = "state_sync_response"  # Respond with state data
+    CHARGE_REQUEST = "charge_request"  # Request to charge, need patrol handoff
+    HANDOFF_ACCEPT = "handoff_accept"  # Accept patrol handoff
     STATUS = "status"               # Battery, health status
     COMMAND = "command"             # Coordination commands
     ACK = "ack"                     # Acknowledgment

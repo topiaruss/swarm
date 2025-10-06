@@ -127,6 +127,11 @@ class AutonomousStrategy:
         # State sync tracking
         self.peers_to_sync: Set[str] = set()  # Peers we need to sync with
 
+        # Patrol handoff tracking
+        self.covering_sectors: List[PatrolSector] = []  # Additional sectors we're covering
+        self.handoff_pending: bool = False  # Waiting for handoff before charging
+        self.handoff_volunteer: Optional[str] = None  # Peer who volunteered to cover
+
     def update_peer_position(self, peer_id: str, position: np.ndarray, timestamp: float):
         """Update last known position of a peer."""
         self.last_known_positions[peer_id] = (position.copy(), timestamp)
@@ -588,6 +593,121 @@ class AutonomousStrategy:
             return True
 
         return False
+
+    def announce_charge_intent(self, current_time: float, station: ChargingStation) -> Dict:
+        """
+        Announce intention to charge and request patrol handoff.
+
+        Args:
+            current_time: Current simulation time
+            station: Charging station
+
+        Returns:
+            Dictionary containing charge request data
+        """
+        if not hasattr(self.drone, 'battery') or not isinstance(self.drone.battery, Battery):
+            return {}
+
+        energy_to_return = self.calculate_return_energy(station)
+        estimated_departure = current_time + (energy_to_return / self.drone.battery.discharge_rate_base)
+
+        return {
+            'drone_id': self.drone.id,
+            'battery_level': self.drone.battery.level(),
+            'estimated_departure_time': estimated_departure,
+            'patrol_sector': self.assigned_sector.sector_id if self.assigned_sector else None,
+            'sector_center': self.assigned_sector.center.tolist() if self.assigned_sector else None,
+            'handoff_needed': self.assigned_sector is not None
+        }
+
+    def can_cover_handoff(self, request_data: Dict) -> bool:
+        """
+        Evaluate if this drone can cover another drone's patrol sector.
+
+        Args:
+            request_data: Charge request from peer
+
+        Returns:
+            True if can cover the handoff
+        """
+        if not hasattr(self.drone, 'battery') or not isinstance(self.drone.battery, Battery):
+            return False
+
+        # Already covering too many sectors
+        if len(self.covering_sectors) >= 2:
+            return False
+
+        # Battery too low to take on extra work
+        if self.drone.battery.is_below_optimal():
+            return False
+
+        # Not assigned to a sector ourselves
+        if self.assigned_sector is None:
+            return False
+
+        # Check if request sector is adjacent to our assigned sector
+        if request_data.get('sector_center') and self.assigned_sector:
+            request_center = np.array(request_data['sector_center'])
+            distance = np.linalg.norm(self.assigned_sector.center - request_center)
+
+            # Adjacent if within ~2x sector radius
+            max_adjacent_distance = self.assigned_sector.radius * 3
+            if distance > max_adjacent_distance:
+                return False
+
+        return True
+
+    def accept_handoff(self, request_data: Dict, current_time: float) -> Dict:
+        """
+        Accept patrol handoff from another drone.
+
+        Args:
+            request_data: Charge request from peer
+            current_time: Current simulation time
+
+        Returns:
+            Dictionary containing handoff accept data
+        """
+        # Find the sector being handed off
+        sector_id = request_data.get('patrol_sector')
+        handoff_sector = None
+
+        for sector in self.patrol_sectors:
+            if sector.sector_id == sector_id:
+                handoff_sector = sector
+                break
+
+        if handoff_sector:
+            self.covering_sectors.append(handoff_sector)
+
+        return {
+            'drone_id': self.drone.id,
+            'battery_level': self.drone.battery.level() if hasattr(self.drone, 'battery') else 1.0,
+            'sector_accepted': sector_id,
+            'timestamp': current_time
+        }
+
+    def release_handoff_coverage(self, sector_id: str):
+        """
+        Release coverage of a handed-off sector.
+
+        Args:
+            sector_id: Sector ID to release
+        """
+        self.covering_sectors = [s for s in self.covering_sectors if s.sector_id != sector_id]
+
+    def get_all_patrol_sectors(self) -> List[PatrolSector]:
+        """
+        Get all sectors this drone is currently patrolling.
+
+        Returns:
+            List of sectors (assigned + covering)
+        """
+        sectors = []
+        if self.assigned_sector:
+            sectors.append(self.assigned_sector)
+        sectors.extend(self.covering_sectors)
+        return sectors
 
 
 def create_perimeter_sectors(
