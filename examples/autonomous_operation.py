@@ -180,15 +180,21 @@ class AutonomousOperationSimulation:
     def update(self):
         """Update simulation step."""
 
-        # Partition events
-        if not self.partition_active and self.arena.time >= self.partition_start_time:
+        # Partition events (only trigger once)
+        if (not self.partition_active and
+            self.arena.time >= self.partition_start_time and
+            self.arena.time < self.partition_start_time + self.dt):
             self.apply_partition()
 
-        if self.partition_active and self.arena.time >= self.partition_end_time:
+        if (self.partition_active and
+            self.arena.time >= self.partition_end_time and
+            self.arena.time < self.partition_end_time + self.dt):
             self.remove_partition()
 
-        # Threat spawn
-        if not self.threat_spawned and self.arena.time >= self.threat_spawn_time:
+        # Threat spawn (only once)
+        if (not self.threat_spawned and
+            self.arena.time >= self.threat_spawn_time and
+            self.arena.time < self.threat_spawn_time + self.dt):
             self.spawn_threat()
 
         # Update strategies
