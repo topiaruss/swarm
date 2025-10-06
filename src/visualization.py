@@ -57,6 +57,9 @@ class ArenaVisualizer:
         # Uncertainty data: dict of entity.id -> uncertainty radius
         self.uncertainties = {}
 
+        # Store mesh connection line artists for removal
+        self.mesh_lines = []
+
         # Set up the plot
         self.fig = plt.figure(figsize=(12, 9))
         self.ax = self.fig.add_subplot(111, projection='3d')
@@ -207,6 +210,14 @@ class ArenaVisualizer:
 
     def _draw_mesh_connections(self):
         """Draw mesh network connections between nodes."""
+        # Remove old mesh connection lines
+        for line in self.mesh_lines:
+            try:
+                line.remove()
+            except:
+                pass
+        self.mesh_lines.clear()
+
         if not self.mesh_network:
             return
 
@@ -218,7 +229,7 @@ class ArenaVisualizer:
                 pos2 = self.mesh_network.nodes[node_id2].position
 
                 # Draw line between connected nodes
-                self.ax.plot(
+                line = self.ax.plot(
                     [pos1[0], pos2[0]],
                     [pos1[1], pos2[1]],
                     [pos1[2], pos2[2]],
@@ -226,7 +237,8 @@ class ArenaVisualizer:
                     alpha=0.6,         # More opaque
                     linewidth=2,       # Thicker
                     linestyle='-'      # Solid line instead of dotted
-                )
+                )[0]  # plot() returns a list of Line2D objects
+                self.mesh_lines.append(line)
 
     def _update_trail(self, entity: Entity):
         """Update position trail for an entity."""
