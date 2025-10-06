@@ -33,16 +33,19 @@ def test_network_partition():
     # Create mesh network
     mesh = MeshNetwork(radio_type=RadioType.ESP_NOW)
 
-    # Create 4 drones (closer together for ESP-NOW range of 300m)
+    # Create 4 drones starting close together
+    center = arena.get_bounds_center()
     drone_positions = [
-        [400, 400, 100],
-        [600, 400, 100],
-        [600, 600, 100],
-        [400, 600, 100],
+        center + np.array([-50, -50, 0]),  # PATROL-1 (Group A)
+        center + np.array([50, -50, 0]),   # PATROL-2 (Group A)
+        center + np.array([50, 50, 0]),    # PATROL-3 (Group B)
+        center + np.array([-50, 50, 0]),   # PATROL-4 (Group B)
     ]
 
     drone_ids = []
     network_states = {}
+    group_a = {"PATROL-1", "PATROL-2"}
+    group_b = {"PATROL-3", "PATROL-4"}
 
     for i, pos in enumerate(drone_positions):
         drone = Drone(
@@ -105,11 +108,6 @@ def test_network_partition():
             net_state = network_states[drone_id]
             mesh_node = mesh.nodes[drone_id]
 
-            if step == 10 and drone_id == "PATROL-1":  # Debug at 1 second
-                print(f"\nDEBUG: {drone_id} inbox has {len(mesh_node.inbox)} messages")
-                print(f"DEBUG: Neighbors: {mesh_node.neighbors}")
-                print(f"DEBUG: Pending messages: {len(mesh.pending_messages)}")
-
             for msg in mesh_node.inbox:
                 if msg.msg_type == MessageType.HEARTBEAT:
                     heartbeat = msg.data.get('heartbeat')
@@ -134,20 +132,38 @@ def test_network_partition():
 
     print("\n✓ All drones connected")
 
-    # Phase 2: Simulate partition
-    print("\nPhase 2: Partition (stop heartbeats from group B)")
+    # Phase 2: Simulate partition by physical separation
+    print("\nPhase 2: Partition (physically separate groups)")
     print("-" * 70)
-
-    group_a = {"PATROL-1", "PATROL-2"}
-    group_b = {"PATROL-3", "PATROL-4"}
 
     partition_start = current_time
 
-    # Simulate 10 seconds with partition (stop sending between groups)
+    # Move groups apart over 10 seconds
     for step in range(100):  # 10 seconds
         current_time = partition_start + step * dt
 
-        # Send heartbeats (but partition will drop cross-group messages)
+        # Move drones to separated positions (600m apart)
+        for drone_id in drone_ids:
+            drone = arena.get_entity_by_id(drone_id)
+
+            # Target: Group A goes west, Group B goes east
+            if drone_id in group_a:
+                target = center + np.array([-300, 0, 0])
+            else:
+                target = center + np.array([300, 0, 0])
+
+            # Move toward target
+            direction = target - drone.position
+            distance = np.linalg.norm(direction)
+
+            if distance > 5.0:
+                direction = direction / distance
+                drone.position = drone.position + direction * 50.0 * dt  # 50 m/s
+
+            # Update mesh position
+            mesh.update_node_position(drone_id, drone.position)
+
+        # Send heartbeats
         for drone_id in drone_ids:
             net_state = network_states[drone_id]
             mesh_node = mesh.nodes[drone_id]
@@ -167,35 +183,8 @@ def test_network_partition():
                     timestamp=current_time
                 )
 
-        # Custom mesh update with partition
-        mesh.calculate_connectivity()
-
-        # Transmit with partition blocking
-        for node_id, node in mesh.nodes.items():
-            while node.outbox:
-                msg = node.outbox.pop(0)
-
-                for neighbor_id in node.neighbors:
-                    # Block cross-group messages
-                    sender_in_a = node_id in group_a
-                    sender_in_b = node_id in group_b
-                    receiver_in_a = neighbor_id in group_a
-                    receiver_in_b = neighbor_id in group_b
-
-                    if (sender_in_a and receiver_in_b) or (sender_in_b and receiver_in_a):
-                        continue  # Partition blocks this
-
-                    distance = np.linalg.norm(
-                        node.position - mesh.nodes[neighbor_id].position
-                    )
-
-                    if not mesh.calculate_packet_loss(distance):
-                        latency = mesh.calculate_latency(distance)
-                        arrival_time = current_time + latency
-                        mesh.pending_messages.append((msg, neighbor_id, arrival_time))
-                        mesh.total_messages += 1
-
-        mesh.deliver_messages(current_time)
+        # Normal mesh update (physical separation breaks connections naturally)
+        mesh.update(current_time)
 
         # Process heartbeats
         for drone_id in drone_ids:
@@ -229,15 +218,33 @@ def test_network_partition():
 
     print("\n✓ Partition detected by all drones")
 
-    # Phase 3: Restore connectivity
-    print("\nPhase 3: Restore connectivity")
+    # Phase 3: Restore connectivity by bringing groups back together
+    print("\nPhase 3: Restore connectivity (groups return to center)")
     print("-" * 70)
 
     restore_start = current_time
 
-    # Simulate 10 seconds with restored connectivity
+    # Move groups back together over 10 seconds
     for step in range(100):
         current_time = restore_start + step * dt
+
+        # Move drones back to center
+        for drone_id in drone_ids:
+            drone = arena.get_entity_by_id(drone_id)
+
+            # Target: back to initial area near center
+            target = center + np.array([0, 0, 0])
+
+            # Move toward target
+            direction = target - drone.position
+            distance = np.linalg.norm(direction)
+
+            if distance > 5.0:
+                direction = direction / distance
+                drone.position = drone.position + direction * 50.0 * dt  # 50 m/s
+
+            # Update mesh position
+            mesh.update_node_position(drone_id, drone.position)
 
         # Send heartbeats
         for drone_id in drone_ids:
@@ -259,7 +266,7 @@ def test_network_partition():
                     timestamp=current_time
                 )
 
-        # Normal mesh update (no partition)
+        # Normal mesh update
         mesh.update(current_time)
 
         # Process heartbeats
