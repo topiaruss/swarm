@@ -49,7 +49,7 @@ class ChargingManagementSimulation:
         self.returning_drones = set()  # drone_ids returning to charge
 
         # Simulation parameters
-        self.dt = 0.1  # 100ms timestep
+        self.dt = 0.033  # 33ms timestep (real-time at 30 fps)
 
         # Setup scenario
         self._setup_scenario()

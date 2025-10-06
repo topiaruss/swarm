@@ -50,7 +50,7 @@ class AutonomousOperationSimulation:
         self.strategies = {}
 
         # Simulation parameters
-        self.dt = 0.1  # 100ms timestep
+        self.dt = 0.033  # 33ms timestep (real-time at 30 fps)
 
         # Partition control
         self.partition_active = False
