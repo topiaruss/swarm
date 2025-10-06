@@ -59,12 +59,13 @@ class NetworkPartitionSimulation:
     def _setup_scenario(self):
         """Create scenario with 4 patrol drones."""
 
-        # Create 4 patrol drones in different positions
+        # Create 4 patrol drones starting close together (within ESP-NOW range)
+        center = self.arena.get_bounds_center()
         drone_positions = [
-            [300, 300, 100],  # SW quadrant
-            [700, 300, 100],  # SE quadrant
-            [700, 700, 100],  # NE quadrant
-            [300, 700, 100],  # NW quadrant
+            center + np.array([-50, -50, 0]),  # PATROL-1 (Group A)
+            center + np.array([50, -50, 0]),   # PATROL-2 (Group A)
+            center + np.array([50, 50, 0]),    # PATROL-3 (Group B)
+            center + np.array([-50, 50, 0]),   # PATROL-4 (Group B)
         ]
 
         drone_ids = []
@@ -83,11 +84,9 @@ class NetworkPartitionSimulation:
             # Add to mesh network
             self.mesh.add_node(drone.id, np.array(pos))
 
-            # Give each drone a circular patrol path
-            center = self.arena.get_bounds_center()
-            angle = (i / 4) * 2 * np.pi
-            drone.phase_offset = angle
-            drone.patrol_radius = 150
+            # Store initial position for later
+            drone.initial_position = pos.copy()
+            drone.group = "A" if i < 2 else "B"
 
         # Create network state tracker for each drone
         for drone_id in drone_ids:
@@ -96,26 +95,22 @@ class NetworkPartitionSimulation:
             self.network_states[drone_id] = NetworkState(drone_id, expected_peers)
 
     def apply_partition(self):
-        """
-        Simulate network partition by preventing communication
-        between drones 1,2 and drones 3,4.
-        """
-        # Manually break mesh connections by setting positions far apart temporarily
-        # (We'll do this by marking certain messages as dropped)
+        """Initiate network partition by physically separating drone groups."""
         self.partition_active = True
         print(f"\n{'='*70}")
-        print(f"[{self.arena.time:.1f}s] SIMULATING NETWORK PARTITION")
-        print(f"  Group A: PATROL-1, PATROL-2")
-        print(f"  Group B: PATROL-3, PATROL-4")
-        print(f"  (No communication between groups)")
+        print(f"[{self.arena.time:.1f}s] INITIATING PARTITION")
+        print(f"  Group A (PATROL-1, PATROL-2) → Moving WEST")
+        print(f"  Group B (PATROL-3, PATROL-4) → Moving EAST")
+        print(f"  Drones will separate beyond ESP-NOW range (300m)")
         print(f"{'='*70}\n")
 
     def remove_partition(self):
-        """Restore network connectivity."""
+        """Restore network connectivity by bringing groups back together."""
         self.partition_active = False
         print(f"\n{'='*70}")
-        print(f"[{self.arena.time:.1f}s] RESTORING NETWORK CONNECTIVITY")
-        print(f"  All drones should rejoin")
+        print(f"[{self.arena.time:.1f}s] ENDING PARTITION")
+        print(f"  Both groups returning to center")
+        print(f"  Network will reconnect when back in range")
         print(f"{'='*70}\n")
 
     def is_message_blocked(self, sender_id: str, receiver_id: str) -> bool:
@@ -144,26 +139,45 @@ class NetworkPartitionSimulation:
     def update(self):
         """Update simulation step."""
 
-        # Check for partition events
-        if not self.partition_active and self.arena.time >= self.partition_start_time:
+        # Check for partition events (only trigger once)
+        if (not self.partition_active and
+            self.arena.time >= self.partition_start_time and
+            self.arena.time < self.partition_start_time + self.dt):
             self.apply_partition()
 
-        if self.partition_active and self.arena.time >= self.partition_end_time:
+        if (self.partition_active and
+            self.arena.time >= self.partition_end_time and
+            self.arena.time < self.partition_end_time + self.dt):
             self.remove_partition()
 
-        # Update patrol drone movements (circular paths)
+        # Update patrol drone movements
         for entity in self.arena.get_active_entities():
             if entity.role == Role.PATROL and isinstance(entity, Drone):
                 center = self.arena.get_bounds_center()
-                angular_velocity = 0.1
-                angle = angular_velocity * self.arena.time + entity.phase_offset
-                radius = entity.patrol_radius
 
-                x = center[0] + radius * np.cos(angle)
-                y = center[1] + radius * np.sin(angle)
-                z = 100
+                # Determine target position based on state
+                if self.partition_active:
+                    # Separate: Group A goes west, Group B goes east
+                    if entity.group == "A":
+                        target = center + np.array([-300, 0, 0])  # 300m west
+                    else:
+                        target = center + np.array([300, 0, 0])   # 300m east
+                else:
+                    # Stay near center (small circular patrol)
+                    angle = 0.2 * self.arena.time + (0 if entity.group == "A" else np.pi)
+                    offset = 80 * np.array([np.cos(angle), np.sin(angle), 0])
+                    target = center + offset
 
-                entity.position = np.array([x, y, z])
+                # Move toward target
+                direction = target - entity.position
+                distance = np.linalg.norm(direction)
+
+                if distance > 5.0:  # Move if not at target
+                    direction = direction / distance
+                    entity.velocity = direction * 10.0  # 10 m/s
+                    entity.position = entity.position + entity.velocity * self.dt
+                else:
+                    entity.velocity = np.array([0.0, 0.0, 0.0])
 
                 # Update mesh position
                 self.mesh.update_node_position(entity.id, entity.position)
@@ -197,44 +211,9 @@ class NetworkPartitionSimulation:
                         timestamp=self.arena.time
                     )
 
-        # Update mesh network (with partition filtering)
-        original_transmit = self.mesh.transmit_messages
-
-        def filtered_transmit(current_time):
-            """Transmit with partition filtering."""
-            for node_id, node in self.mesh.nodes.items():
-                while node.outbox:
-                    msg = node.outbox.pop(0)
-
-                    # Broadcast to neighbors
-                    for neighbor_id in node.neighbors:
-                        # Check if partition blocks this
-                        if self.is_message_blocked(node_id, neighbor_id):
-                            # Silently drop
-                            continue
-
-                        distance = np.linalg.norm(
-                            node.position - self.mesh.nodes[neighbor_id].position
-                        )
-
-                        # Check packet loss
-                        if self.mesh.calculate_packet_loss(distance):
-                            node.messages_dropped += 1
-                            self.mesh.total_dropped += 1
-                            continue
-
-                        # Calculate arrival time
-                        latency = self.mesh.calculate_latency(distance)
-                        arrival_time = current_time + latency
-
-                        # Queue for delivery
-                        self.mesh.pending_messages.append((msg, neighbor_id, arrival_time))
-                        self.mesh.total_messages += 1
-
-        # Temporarily replace transmit method
-        self.mesh.transmit_messages = filtered_transmit
+        # Update mesh network
+        # Physical separation naturally breaks connections (ESP-NOW max range 300m)
         self.mesh.update(self.arena.time)
-        self.mesh.transmit_messages = original_transmit
 
         # Process received heartbeats
         for entity in self.arena.get_active_entities():
@@ -280,20 +259,24 @@ class NetworkPartitionSimulation:
         print("=" * 70)
         print()
         print("Scenario:")
-        print("  - 4 patrol drones (PATROL-1 through PATROL-4)")
+        print("  - 4 patrol drones start close together (all connected)")
         print("  - Heartbeat interval: 1 second")
         print("  - Timeout threshold: 5 seconds")
+        print("  - ESP-NOW radio range: 300m")
         print()
         print("Timeline:")
-        print(f"  t=0s    - Normal operation, full connectivity")
-        print(f"  t={self.partition_start_time:.0f}s   - PARTITION: Drones 1,2 isolated from 3,4")
-        print(f"  t={self.partition_end_time:.0f}s   - RESTORE: Full connectivity resumed")
+        print(f"  t=0-{self.partition_start_time:.0f}s   - Slow circular patrol near center")
+        print(f"  t={self.partition_start_time:.0f}s   - Group A (1,2) moves WEST, Group B (3,4) moves EAST")
+        print(f"           Groups separate beyond radio range → partition!")
+        print(f"  t={self.partition_end_time:.0f}s   - Both groups return to center")
+        print(f"           Back in range → network reconnects")
         print(f"  t=60s   - End simulation")
         print()
         print("Watch for:")
-        print("  - Partition detection messages")
-        print("  - Mesh connections disappear during partition")
-        print("  - Reconnection messages when restored")
+        print("  - Drones physically separate (groups move apart)")
+        print("  - Green mesh lines disappear when out of range")
+        print("  - 'PARTITION detected' messages in console")
+        print("  - Mesh lines reappear when groups reunite")
         print()
 
         def update_with_info():
