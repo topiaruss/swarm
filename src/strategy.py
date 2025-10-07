@@ -665,10 +665,11 @@ class AutonomousStrategy:
                 min_battery = min(other_batteries)
 
                 # If others are healthy and slot is free, charge proactively
-                if (battery_pct < 0.90 and  # Below 90%
+                # BUT only if we're meaningfully below full (< 75%)
+                if (battery_pct < 0.75 and  # Below 75% (not just 90%)
                     station.has_available_slot() and
-                    avg_battery > 0.60 and  # Fleet average is healthy
-                    min_battery > 0.40):  # No one else is critical
+                    avg_battery > 0.70 and  # Fleet average is healthy (raised from 60%)
+                    min_battery > 0.50):  # No one else is low (raised from 40%)
                     # Predictive scheduling: charge now to maintain staggered levels
                     return True
 
