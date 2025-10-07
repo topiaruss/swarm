@@ -102,12 +102,12 @@ class CombinedOpsSimulation:
             center + np.array([-50, 50, 100]),   # PATROL-4 (Group B)
         ]
 
-        # Start with moderate battery levels to trigger charging
+        # Start with staggered battery levels to show gradual charging over time
         initial_batteries = [
-            0.50,  # 50% - will need charging during demo
-            0.60,  # 60%
-            0.55,  # 55%
-            0.65,  # 65%
+            0.95,  # 95% - fully charged, won't need charging until later
+            0.85,  # 85% - good, will charge later in demo
+            0.70,  # 70% - moderate, will need charging mid-demo
+            0.60,  # 60% - lower, will charge first when slots free
         ]
 
         drone_ids = []
@@ -472,19 +472,22 @@ class CombinedOpsSimulation:
         print("=" * 70)
         print()
         print("Timeline:")
-        print(f"  t=0-20s   : Normal patrol, batteries draining")
+        print(f"  t=0-20s   : Normal patrol (batteries: 95%, 85%, 70%, 60%)")
         print(f"  t={self.partition_start_time:.0f}s     : PARTITION activated")
         print(f"  t={self.threat_spawn_time:.0f}s     : THREAT spawns (Group B area)")
-        print(f"  t=30s     : First drones need charging (with handoff)")
+        print(f"  t=30-45s  : Batteries drain, drones start returning to charge")
         print(f"  t={self.partition_end_time:.0f}s     : Network RESTORED (state sync)")
         print(f"  t=60-120s : Continued ops with charging cycles")
         print()
         print("Watch for:")
-        print("  - Network partition (mesh connections break)")
+        print("  - Battery bars draining (green→orange→red)")
+        print("  - Network partition at t=20s (mesh connections break)")
         print("  - Autonomous mode activation")
-        print("  - Threat detection (Group B only during partition)")
-        print("  - Charging returns with patrol handoff")
-        print("  - State sync on reconnection")
+        print("  - Threat detection at t=25s (Group B only during partition)")
+        print("  - Time-based charging (drones stay on patrol until needed)")
+        print("  - Emergency reserve logic (keeps 1 drone >80%)")
+        print("  - Charging returns with patrol handoff coordination")
+        print("  - State sync on reconnection at t=50s")
         print("  - Coverage maintained throughout")
         print()
 
